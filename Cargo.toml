@@ -19,12 +19,13 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
-default = ["ledger", "specter", "coldcard", "bitbox", "jade", "service"]
+default = ["ledger", "specter", "coldcard", "bitbox", "jade", "service", "vanadium"]
 bitbox = ["tokio", "hidapi", "bitbox-api", "regex"]
 coldcard = ["dep:coldcard", "regex"]
 specter = ["tokio", "tokio-serial", "serialport"]
 jade = ["tokio", "tokio-serial", "serde", "serde_bytes", "serde_cbor", "serialport", "reqwest"]
 ledger = ["regex", "tokio", "ledger_bitcoin_client", "ledger-transport-hidapi", "ledger-apdu", "hidapi"]
+vanadium = ["vnd-bitcoin-client"]
 regex = ["dep:regex"]
 service = ["bitbox", "coldcard", "jade", "ledger", "specter", "tracing", "hex", "crossbeam"]
 
@@ -47,7 +48,7 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "rus
 bitbox-api = { version = "0.9.0", default-features = false, features = ["usb", "tokio", "multithreaded", "simulator"], optional = true }
 
 # coldcard
-coldcard = { version = "0.12.2", optional = true }
+coldcard = { version = "0.13.0", optional = true }
 
 # ledger
 ledger_bitcoin_client = { version = "0.5.0", optional = true }
@@ -65,6 +66,9 @@ tokio = { version = "1.21.0", features = ["net", "time", "io-util", "sync", "mac
 tracing = { version = "0.1.37", optional = true }
 hex = { version = "0.4.3", optional = true }
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"], optional = true }
+
+# vanadium
+vnd-bitcoin-client = { git = "https://github.com/LedgerHQ/vanadium.git", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.21", features = ["macros", "net", "rt", "rt-multi-thread", "io-util", "sync"] }
