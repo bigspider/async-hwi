@@ -12,6 +12,8 @@ pub mod service;
 #[cfg(feature = "specter")]
 pub mod specter;
 pub mod utils;
+#[cfg(feature = "vanadium")]
+pub mod vanadium;
 
 use async_trait::async_trait;
 use bitcoin::{
@@ -195,6 +197,7 @@ pub enum DeviceKind {
     Ledger,
     LedgerSimulator,
     Jade,
+    Vanadium,
 }
 
 impl std::fmt::Display for DeviceKind {
@@ -207,6 +210,7 @@ impl std::fmt::Display for DeviceKind {
             DeviceKind::Ledger => write!(f, "ledger"),
             DeviceKind::LedgerSimulator => write!(f, "ledger-simulator"),
             DeviceKind::Jade => write!(f, "jade"),
+            DeviceKind::Vanadium => write!(f, "vanadium"),
         }
     }
 }
@@ -222,6 +226,7 @@ impl std::str::FromStr for DeviceKind {
             "ledger" => Ok(DeviceKind::Ledger),
             "ledger-simulator" => Ok(DeviceKind::LedgerSimulator),
             "jade" => Ok(DeviceKind::Jade),
+            "vanadium" => Ok(DeviceKind::Vanadium),
             _ => Err(()),
         }
     }
