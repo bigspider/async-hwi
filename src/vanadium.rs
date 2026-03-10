@@ -11,7 +11,7 @@ use std::convert::TryFrom;
 use tokio::sync::Mutex;
 
 use vnd_bitcoin_client::{
-    bip388, create_hid_client, create_native_client, create_tcp_client, message, psbt_v0_to_v2,
+    bip388, create_standalone_client, message, psbt_v0_to_v2,
     BitcoinClient, ProofOfRegistration, VAppTransport,
 };
 
@@ -58,25 +58,9 @@ impl Vanadium {
         Ok(self)
     }
 
-    /// Connect using a HID transport (real Ledger device running Vanadium).
-    pub async fn try_connect_hid(vapp_path: &str) -> Result<Self, HWIError> {
-        let transport = create_hid_client(vapp_path, None, true)
-            .await
-            .map_err(|e| HWIError::Device(e.to_string()))?;
-        Ok(Self::new(transport))
-    }
-
-    /// Connect using a TCP transport (Speculos simulator running Vanadium).
-    pub async fn try_connect_tcp(vapp_path: &str) -> Result<Self, HWIError> {
-        let transport = create_tcp_client(vapp_path, None, true)
-            .await
-            .map_err(|e| HWIError::Device(e.to_string()))?;
-        Ok(Self::new(transport))
-    }
-
-    /// Connect using a native TCP transport (Bitcoin app compiled natively).
-    pub async fn try_connect_native(addr: Option<&str>) -> Result<Self, HWIError> {
-        let transport = create_native_client(addr, None)
+    /// Connect to a standalone V-App server.
+    pub async fn try_connect(addr: Option<&str>) -> Result<Self, HWIError> {
+        let transport = create_standalone_client(addr)
             .await
             .map_err(|e| HWIError::Device(e.to_string()))?;
         Ok(Self::new(transport))
