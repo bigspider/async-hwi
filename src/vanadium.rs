@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 use tokio::sync::Mutex;
 
 use vnd_bitcoin_client::{
-    bip388, create_standalone_client, message, psbt_v0_to_v2,
-    BitcoinClient, ProofOfRegistration, VAppTransport,
+    bip388, create_standalone_client, message, psbt_v0_to_v2, BitcoinClient, ProofOfRegistration,
+    VAppTransport,
 };
 
 use crate::{utils, AddressScript, DeviceKind, Error as HWIError, CHANGE_INDEX, HWI, RECV_INDEX};
@@ -116,7 +116,7 @@ impl HWI for Vanadium {
             .client
             .lock()
             .await
-            .register_account(name, &account, None, None)
+            .register_account(name, &account, None, None, true)
             .await
             .map_err(|e| HWIError::Device(e.to_string()))?;
         Ok(Some(por.dangerous_as_bytes()))
