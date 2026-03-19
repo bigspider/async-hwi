@@ -21,6 +21,8 @@ use bitcoin::{
     psbt::Psbt,
 };
 
+pub use vnd_bitcoin_client::{IdentityKey, IdentitySignature, ProofOfRegistration, RegistrationId};
+
 use std::{cmp::Ordering, fmt::Debug, str::FromStr};
 
 const RECV_INDEX: ChildNumber = ChildNumber::Normal { index: 0 };
@@ -94,6 +96,41 @@ pub trait HWI: Debug {
     async fn display_address(&self, script: &AddressScript) -> Result<(), Error>;
     /// Sign a partially signed bitcoin transaction (PSBT).
     async fn sign_tx(&self, tx: &mut Psbt) -> Result<(), Error>;
+
+    /// Additional features implemented in the Vanadium bitcoin app
+    async fn get_identity_key(&self, _identity_index: u32) -> Result<Xpub, Error> {
+        Err(Error::UnimplementedMethod)
+    }
+
+    async fn register_identity_key(
+        &self,
+        _name: &str,
+        _key: &Xpub,
+    ) -> Result<
+        (
+            RegistrationId<IdentityKey>,
+            ProofOfRegistration<IdentityKey>,
+        ),
+        Error,
+    > {
+        Err(Error::UnimplementedMethod)
+    }
+
+    async fn get_signed_extended_pubkey(
+        &self,
+        _path: &DerivationPath,
+        _identity_index: u32,
+    ) -> Result<(Xpub, IdentitySignature), Error> {
+        Err(Error::UnimplementedMethod)
+    }
+
+    async fn get_signed_address(
+        &self,
+        _script: &AddressScript,
+        _identity_index: u32,
+    ) -> Result<String, Error> {
+        Err(Error::UnimplementedMethod)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 use tokio::sync::Mutex;
 
 use vnd_bitcoin_client::{
-    bip388, create_standalone_client, message, psbt_v0_to_v2, BitcoinClient, ProofOfRegistration,
-    VAppTransport,
+    bip388, create_standalone_client, message, psbt_v0_to_v2, BitcoinClient, IdentityKey,
+    IdentitySignature, ProofOfRegistration, RegistrationId, VAppTransport,
 };
 
 use crate::{utils, AddressScript, DeviceKind, Error as HWIError, CHANGE_INDEX, HWI, RECV_INDEX};
@@ -233,6 +233,122 @@ impl HWI for Vanadium {
         }
 
         Ok(())
+    }
+
+    async fn get_identity_key(&self, identity_index: u32) -> Result<Xpub, HWIError> {
+        let xpub_bytes = self
+            .client
+            .lock()
+            .await
+            .get_identity_key(Some(identity_index), false)
+            .await
+            .map_err(|e| HWIError::Device(e.to_string()))?;
+        Xpub::decode(&xpub_bytes).map_err(|_| HWIError::Device("Failed to decode xpub".to_string()))
+    }
+
+    async fn register_identity_key(
+        &self,
+        name: &str,
+        key: &Xpub,
+    ) -> Result<
+        (
+            RegistrationId<IdentityKey>,
+            ProofOfRegistration<IdentityKey>,
+        ),
+        HWIError,
+    > {
+        let pubkey_bytes: [u8; 33] = key.public_key.serialize();
+        Ok(self
+            .client
+            .lock()
+            .await
+            .register_identity_key(name, &pubkey_bytes)
+            .await
+            .map_err(|e| HWIError::Device(e.to_string()))?)
+    }
+
+    async fn get_signed_extended_pubkey(
+        &self,
+        path: &DerivationPath,
+        identity_index: u32,
+    ) -> Result<(Xpub, IdentitySignature), HWIError> {
+        let path_str = path.to_string();
+        let (xpub_bytes, sig) = self
+            .client
+            .lock()
+            .await
+            .get_extended_pubkey(&path_str, self.options.display_xpub, Some(identity_index))
+            .await
+            .map_err(|e| HWIError::Device(e.to_string()))?;
+        let xpub = Xpub::decode(&xpub_bytes)
+            .map_err(|_| HWIError::Device("Failed to decode xpub".to_string()))?;
+        let sig = sig.ok_or(HWIError::DeviceDidNotSign)?;
+        Ok((xpub, sig))
+    }
+
+    async fn get_signed_address(
+        &self,
+        script: &AddressScript,
+        identity_index: u32,
+    ) -> Result<String, HWIError> {
+        match script {
+            AddressScript::Miniscript { index, change } => {
+                let (name, account, hmac) = self
+                    .options
+                    .wallet
+                    .as_ref()
+                    .ok_or(HWIError::MissingPolicy)?;
+                let por = hmac
+                    .as_ref()
+                    .map(|h| ProofOfRegistration::<bip388::WalletPolicy>::from_bytes(*h));
+                let coords =
+                    message::AccountCoordinates::WalletPolicy(message::WalletPolicyCoordinates {
+                        is_change: *change,
+                        address_index: *index,
+                    });
+                let (address, _) = self
+                    .client
+                    .lock()
+                    .await
+                    .get_address(
+                        account,
+                        name,
+                        &coords,
+                        por.as_ref(),
+                        true,
+                        Some(identity_index),
+                    )
+                    .await
+                    .map_err(|e| HWIError::Device(e.to_string()))?;
+                Ok(address)
+            }
+            AddressScript::P2TR(path) => {
+                let children = utils::bip86_path_child_numbers(path.clone())?;
+                let (hardened_children, normal_children) = children.split_at(3);
+                let account_path = DerivationPath::from(hardened_children);
+                let fg = self.get_master_fingerprint().await?;
+                let xpub = self.get_extended_pubkey(&account_path).await?;
+                let policy = format!("tr({}/**)", key_string_from_parts(fg, account_path, xpub));
+                let account = policy_to_account(&policy)?;
+
+                if ![RECV_INDEX, CHANGE_INDEX].contains(&normal_children[0]) {
+                    return Err(HWIError::Bip86ChangeIndex);
+                }
+                let coords =
+                    message::AccountCoordinates::WalletPolicy(message::WalletPolicyCoordinates {
+                        is_change: normal_children[0] == CHANGE_INDEX,
+                        address_index: normal_children[1].into(),
+                    });
+                let (address, _) = self
+                    .client
+                    .lock()
+                    .await
+                    .get_address(&account, "", &coords, None, true, Some(identity_index))
+                    .await
+                    .map_err(|e| HWIError::Device(e.to_string()))?;
+                Ok(address)
+            }
+        }
     }
 }
 
