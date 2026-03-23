@@ -128,7 +128,7 @@ pub trait HWI: Debug {
         &self,
         _script: &AddressScript,
         _identity_index: u32,
-    ) -> Result<String, Error> {
+    ) -> Result<(String, IdentitySignature), Error> {
         Err(Error::UnimplementedMethod)
     }
 }

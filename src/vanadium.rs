@@ -290,7 +290,7 @@ impl HWI for Vanadium {
         &self,
         script: &AddressScript,
         identity_index: u32,
-    ) -> Result<String, HWIError> {
+    ) -> Result<(String, IdentitySignature), HWIError> {
         match script {
             AddressScript::Miniscript { index, change } => {
                 let (name, account, hmac) = self
@@ -306,7 +306,7 @@ impl HWI for Vanadium {
                         is_change: *change,
                         address_index: *index,
                     });
-                let (address, _) = self
+                let (address, sig) = self
                     .client
                     .lock()
                     .await
@@ -320,7 +320,8 @@ impl HWI for Vanadium {
                     )
                     .await
                     .map_err(|e| HWIError::Device(e.to_string()))?;
-                Ok(address)
+                let sig = sig.ok_or(HWIError::DeviceDidNotSign)?;
+                Ok((address, sig))
             }
             AddressScript::P2TR(path) => {
                 let children = utils::bip86_path_child_numbers(path.clone())?;
@@ -339,14 +340,15 @@ impl HWI for Vanadium {
                         is_change: normal_children[0] == CHANGE_INDEX,
                         address_index: normal_children[1].into(),
                     });
-                let (address, _) = self
+                let (address, sig) = self
                     .client
                     .lock()
                     .await
                     .get_address(&account, "", &coords, None, true, Some(identity_index))
                     .await
                     .map_err(|e| HWIError::Device(e.to_string()))?;
-                Ok(address)
+                let sig = sig.ok_or(HWIError::DeviceDidNotSign)?;
+                Ok((address, sig))
             }
         }
     }
