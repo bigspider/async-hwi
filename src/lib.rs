@@ -131,6 +131,22 @@ pub trait HWI: Debug {
     ) -> Result<(String, IdentitySignature), Error> {
         Err(Error::UnimplementedMethod)
     }
+
+    async fn register_wallet_with_identities(
+        &self,
+        _name: &str,
+        _policy: &str,
+        _registered_identities: Option<Vec<vnd_bitcoin_common::message::RegisteredIdentityEntry>>,
+        _key_signatures: Option<Vec<Option<vnd_bitcoin_common::message::IdentitySignature>>>,
+    ) -> Result<
+        (
+            RegistrationId<vnd_bitcoin_common::bip388::WalletPolicy>,
+            ProofOfRegistration<vnd_bitcoin_common::bip388::WalletPolicy>,
+        ),
+        Error,
+    > {
+        Err(Error::UnimplementedMethod)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

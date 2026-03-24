@@ -421,6 +421,29 @@ impl HWI for Vanadium {
             }
         }
     }
+
+    async fn register_wallet_with_identities(
+        &self,
+        name: &str,
+        policy: &str,
+        registered_identities: Option<Vec<vnd_bitcoin_common::message::RegisteredIdentityEntry>>,
+        key_signatures: Option<Vec<Option<vnd_bitcoin_common::message::IdentitySignature>>>,
+    ) -> Result<
+        (
+            RegistrationId<vnd_bitcoin_common::bip388::WalletPolicy>,
+            ProofOfRegistration<vnd_bitcoin_common::bip388::WalletPolicy>,
+        ),
+        HWIError,
+    > {
+        let account = policy_to_account(policy)?;
+        Ok(self
+            .client
+            .lock()
+            .await
+            .register_account(name, &account, registered_identities, key_signatures, true)
+            .await
+            .map_err(|e| HWIError::Device(e.to_string()))?)
+    }
 }
 
 fn xonly_from_pubkey_bytes(pubkey: &[u8]) -> Result<XOnlyPublicKey, HWIError> {
