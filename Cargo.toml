@@ -25,7 +25,7 @@ coldcard = ["dep:coldcard", "regex"]
 specter = ["tokio", "tokio-serial", "serialport"]
 jade = ["tokio", "tokio-serial", "serde", "serde_bytes", "serde_cbor", "serialport", "reqwest"]
 ledger = ["regex", "tokio", "ledger_bitcoin_client", "ledger-transport-hidapi", "ledger-apdu", "hidapi"]
-vanadium = ["vnd-bitcoin-client", "regex", "tokio"]
+vanadium = ["vnd-bitcoin-client", "vnd-bitcoin-common", "regex", "tokio"]
 regex = ["dep:regex"]
 service = ["bitbox", "coldcard", "jade", "ledger", "specter", "tracing", "hex", "crossbeam"]
 
@@ -69,6 +69,7 @@ crossbeam = { version = "0.8.4", features = ["crossbeam-channel"], optional = tr
 
 # vanadium
 vnd-bitcoin-client = { git = "https://github.com/LedgerHQ/vanadium.git", optional = true }
+vnd-bitcoin-common = { git = "https://github.com/LedgerHQ/vanadium.git", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.21", features = ["macros", "net", "rt", "rt-multi-thread", "io-util", "sync"] }

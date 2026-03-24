@@ -153,6 +153,7 @@ dependencies = [
  "tokio-serial",
  "tracing",
  "vnd-bitcoin-client",
+ "vnd-bitcoin-common",
 ]
 
 [[package]]

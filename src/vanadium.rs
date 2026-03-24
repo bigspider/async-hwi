@@ -15,11 +15,21 @@ use vnd_bitcoin_client::{
     IdentitySignature, ProofOfRegistration, RegistrationId, VAppTransport,
 };
 
+use vnd_bitcoin_common::psbt::{
+    PsbtAccount, PsbtAccountCoordinates, PsbtAccountGlobalWrite, PsbtAccountInputWrite,
+    PsbtAccountOutputWrite,
+};
+
 use crate::{utils, AddressScript, DeviceKind, Error as HWIError, CHANGE_INDEX, HWI, RECV_INDEX};
 
 #[derive(Default)]
 struct CommandOptions {
-    wallet: Option<(String, message::Account, Option<[u8; 32]>)>,
+    wallet: Option<(
+        String,
+        message::Account,
+        Option<[u8; 32]>,
+        bip388::WalletPolicy,
+    )>,
     display_xpub: bool,
 }
 
@@ -54,7 +64,8 @@ impl Vanadium {
         hmac: Option<[u8; 32]>,
     ) -> Result<Self, HWIError> {
         let account = policy_to_account(policy)?;
-        self.options.wallet = Some((name.into(), account, hmac));
+        let wp = policy_to_bip388_wallet_policy(policy)?;
+        self.options.wallet = Some((name.into(), account, hmac, wp));
         Ok(self)
     }
 
@@ -123,7 +134,7 @@ impl HWI for Vanadium {
     }
 
     async fn is_wallet_registered(&self, name: &str, policy: &str) -> Result<bool, HWIError> {
-        if let Some((wallet_name, wallet_account, hmac)) = &self.options.wallet {
+        if let Some((wallet_name, wallet_account, hmac, _)) = &self.options.wallet {
             let account = policy_to_account(policy)?;
             Ok(hmac.is_some() && name == wallet_name && account == *wallet_account)
         } else {
@@ -134,7 +145,7 @@ impl HWI for Vanadium {
     async fn display_address(&self, script: &AddressScript) -> Result<(), HWIError> {
         match script {
             AddressScript::Miniscript { index, change } => {
-                let (name, account, hmac) = self
+                let (name, account, hmac, _) = self
                     .options
                     .wallet
                     .as_ref()
@@ -184,6 +195,64 @@ impl HWI for Vanadium {
     }
 
     async fn sign_tx(&self, psbt: &mut Psbt) -> Result<(), HWIError> {
+        if let Some((name, _, hmac, wp)) = &self.options.wallet {
+            // Set global account info
+            psbt.set_account(0, PsbtAccount::WalletPolicy(wp.clone()))
+                .map_err(|e| HWIError::Device(format!("{:?}", e)))?;
+            psbt.set_account_name(0, name)
+                .map_err(|e| HWIError::Device(format!("{:?}", e)))?;
+            if let Some(hmac) = hmac {
+                psbt.set_account_proof_of_registration(0, hmac)
+                    .map_err(|e| HWIError::Device(format!("{:?}", e)))?;
+            }
+
+            // For each key placeholder, find and set coordinates on matching inputs/outputs
+            for (kp, _) in wp.descriptor_template.placeholders() {
+                let key_info = &wp.key_information[kp.key_index as usize];
+                let (fingerprint, origin_path_len) = match &key_info.origin_info {
+                    Some(origin) => (
+                        Fingerprint::from(origin.fingerprint.to_be_bytes()),
+                        origin.derivation_path.len(),
+                    ),
+                    None => (key_info.pubkey.fingerprint(), 0),
+                };
+
+                for input in psbt.inputs.iter_mut() {
+                    if let Some(coords) = get_wallet_policy_coordinates(
+                        &input.bip32_derivation,
+                        &input.tap_key_origins,
+                        fingerprint,
+                        origin_path_len,
+                        kp,
+                    ) {
+                        input
+                            .set_account_coordinates(
+                                0,
+                                PsbtAccountCoordinates::WalletPolicy(coords),
+                            )
+                            .map_err(|e| HWIError::Device(format!("{:?}", e)))?;
+                    }
+                }
+
+                for output in psbt.outputs.iter_mut() {
+                    if let Some(coords) = get_wallet_policy_coordinates(
+                        &output.bip32_derivation,
+                        &output.tap_key_origins,
+                        fingerprint,
+                        origin_path_len,
+                        kp,
+                    ) {
+                        output
+                            .set_account_coordinates(
+                                0,
+                                PsbtAccountCoordinates::WalletPolicy(coords),
+                            )
+                            .map_err(|e| HWIError::Device(format!("{:?}", e)))?;
+                    }
+                }
+            }
+        }
+
         let psbt_v0_bytes = Psbt::serialize(psbt);
         let psbt_v2_bytes =
             psbt_v0_to_v2(&psbt_v0_bytes).map_err(|e| HWIError::Device(e.to_string()))?;
@@ -293,7 +362,7 @@ impl HWI for Vanadium {
     ) -> Result<(String, IdentitySignature), HWIError> {
         match script {
             AddressScript::Miniscript { index, change } => {
-                let (name, account, hmac) = self
+                let (name, account, hmac, _) = self
                     .options
                     .wallet
                     .as_ref()
@@ -366,6 +435,70 @@ fn xonly_from_pubkey_bytes(pubkey: &[u8]) -> Result<XOnlyPublicKey, HWIError> {
     };
     XOnlyPublicKey::from_slice(slice)
         .map_err(|e| HWIError::Device(format!("Invalid x-only pubkey: {}", e)))
+}
+
+fn get_wallet_policy_coordinates(
+    bip32_derivation: &std::collections::BTreeMap<
+        bitcoin::secp256k1::PublicKey,
+        bitcoin::bip32::KeySource,
+    >,
+    tap_key_origins: &std::collections::BTreeMap<
+        XOnlyPublicKey,
+        (Vec<TapLeafHash>, bitcoin::bip32::KeySource),
+    >,
+    fingerprint: Fingerprint,
+    origin_path_len: usize,
+    key_placeholder: &bip388::KeyPlaceholder,
+) -> Option<message::WalletPolicyCoordinates> {
+    for (_, (fpr, path)) in bip32_derivation.iter() {
+        if *fpr != fingerprint || path.len() != origin_path_len + 2 {
+            continue;
+        }
+        let change_step: u32 = path[path.len() - 2].into();
+        let is_change = if change_step == key_placeholder.num1 {
+            false
+        } else if change_step == key_placeholder.num2 {
+            true
+        } else {
+            continue;
+        };
+        let address_index: u32 = path[path.len() - 1].into();
+        return Some(message::WalletPolicyCoordinates {
+            is_change,
+            address_index,
+        });
+    }
+
+    for (_, (_, (fpr, path))) in tap_key_origins.iter() {
+        if *fpr != fingerprint || path.len() != origin_path_len + 2 {
+            continue;
+        }
+        let change_step: u32 = path[path.len() - 2].into();
+        let is_change = if change_step == key_placeholder.num1 {
+            false
+        } else if change_step == key_placeholder.num2 {
+            true
+        } else {
+            continue;
+        };
+        let address_index: u32 = path[path.len() - 1].into();
+        return Some(message::WalletPolicyCoordinates {
+            is_change,
+            address_index,
+        });
+    }
+
+    None
+}
+
+fn policy_to_bip388_wallet_policy(policy: &str) -> Result<bip388::WalletPolicy, HWIError> {
+    let (template, key_strings) = utils::extract_keys_and_template::<String>(policy)?;
+    let key_information: Vec<bip388::KeyInformation> = key_strings
+        .iter()
+        .map(|ks| bip388::KeyInformation::try_from(ks.as_ref()))
+        .collect::<Result<_, _>>()
+        .map_err(|_| HWIError::UnsupportedInput)?;
+    bip388::WalletPolicy::new(&template, key_information).map_err(|_| HWIError::UnsupportedInput)
 }
 
 fn policy_to_account(policy: &str) -> Result<message::Account, HWIError> {
